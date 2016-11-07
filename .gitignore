@@ -6,7 +6,7 @@ library ("ggplot2")
 library(data.table)
 
 #Read the IMDB files
-read_IMDB<-read.csv("IMDB top 250.csv")
+read_IMDB<-read.csv("IMDB top 250.csv") #This dataset contains URL for top 250 movies in IMDB and is used to loop through all the sites.
 
 #Movies between year 1996 and 1998 (both years included)
 movies<-data.frame(read_IMDB[which(as.numeric(read_IMDB$year) %in% c(1996:1998)),])
