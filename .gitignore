@@ -1,0 +1,127 @@
+#Read the required libraries
+library("rvest")
+library("XML")
+library("gtools")
+library ("ggplot2")
+library(data.table)
+
+#Read the IMDB files
+read_IMDB<-read.csv("IMDB top 250.csv")
+
+#Movies between year 1996 and 1998 (both years included)
+movies<-data.frame(read_IMDB[which(as.numeric(read_IMDB$year) %in% c(1996:1998)),])
+
+#Reading IMDB pages
+urls<-read_IMDB$movie.link
+
+#Retrieving movie summary from all web pages
+movie_info<-NULL
+#Loop through all the URL to extract information
+for(url in urls){
+  page<-read_html(url)
+  
+  #Web Scraping for getting movie name
+  movie_nodes <-html_nodes(page,'.title_wrapper h1')
+  movie_name <-trimws(html_text(movie_nodes))
+  movie_name<-sapply(strsplit(movie_name,"\\("), '[', 1) # Remove '('
+  
+  #Web Scraping for getting movie summary
+  movie_summary<-html_nodes(page,'.summary_text')
+  movie_summary<-trimws(gsub("\n","",html_text(movie_summary)))
+  
+  #Web Scraping for getting movie's story line
+  story_line<-html_nodes(page,"#titleStoryLine p")
+  story_line<-gsub("\n","",html_text(story_line))
+  
+  #Web Scraping for getting movie's tag line
+  txt_blocks<-html_nodes(page,".canwrap .inline,  .txt-block")
+  tag_line<-trimws(gsub("Taglines:","",gsub("\n","",html_text(txt_blocks[2]))))
+  tag_line<-sapply(strsplit(tag_line,"»"), '[', 1) # Remove '»'
+  
+  #Web Scraping for getting genres
+  genres<-html_nodes(page,".canwrap")
+  genres<-trimws(gsub("Genres:","",gsub("\n","",html_text(genres[3]))))
+  
+  #Web Scraping for getting movie budget
+  box_office_budget<-html_nodes(page,".subheading+ .txt-block")
+  for(i in html_text(box_office_budget)){
+    b<-trimws(gsub("\n","",i))
+    if(is.na(pmatch("Budget",b))){
+      m<-1
+    }
+    else{
+      budget<-trimws(gsub("Budget:","",b))
+      budget<-trimws(sapply(strsplit(budget,"\\("), '[', 1)) # Remove '('
+    }
+  }
+  
+  #Web Scraping for getting movie gross income
+  gross<-html_nodes(page,".txt-block")
+  for(i in html_text(gross)){
+    g<-trimws(gsub("\n","",i))
+    if(is.na(pmatch("Gross",g))){
+      m<-1
+    }
+    else{
+      gross_budget<-trimws(gsub("Gross:","",g))
+      gross_budget<-trimws(sapply(strsplit(gross_budget,"\\("), '[', 1)) # Remove '('
+    }
+  }
+  
+  #Web Scraping for getting movie's director and stars
+  cast<-html_nodes(page,".credit_summary_item , #titleDetails .inline , .subheading+ .txt-block")
+  director<-trimws(gsub("Director:","",gsub("\n","",html_text(cast[1]))))
+  stars<-trimws(gsub("See full cast & crew","",gsub("Stars:","",gsub("\n","",html_text(cast[3])))))
+  stars<-sapply(strsplit(stars,"»"), '[', 1) # Remove '»
+  
+  #Creating individual data frames to form a collective dataframe
+  movie_name<-data.frame(Movie_Name=movie_name)
+  director<-data.frame(Director=director)
+  stars<-data.frame(Stars=stars)
+  movie_summary<-data.frame(Summary=movie_summary)
+  story_line<-data.frame(Storyline=story_line)
+  tag_line<-data.frame(Tagline=tag_line)
+  genres<-data.frame(Genres=genres)
+  budget<-data.frame(Budget=budget)
+  gross_budget<-data.frame(Gross=gross_budget)
+  
+  #Bind all the dataframes and their data to a single dataframe movie_info
+  movie_info<-rbind(movie_info,data.frame(movie_name,director,stars,tag_line,genres,movie_summary,story_line,budget,gross_budget))
+}
+
+#Write the dataframe to a .csv file to create a dataset
+write.csv(movie_info,'Movie Info.csv', row.names = F)
+
+#Table movie-count vs genres
+#Read the dataset that was created above
+read_movie_info<-read.csv("Movie Info.csv")
+
+#Loop through all the genres from the dataset to filter out the delimitters
+genres<-NULL
+for(genre in read_movie_info$Genres){
+  genres<-c(genres,strsplit(genre,"\\|"))
+}
+movie_genre_count<-table(sapply(genres, "[[",1))
+
+#Form a dataframe to show the movie-count vs genres info
+movie_genre_count<-data.frame(movie_genre_count)
+colnames(movie_genre_count)<-c("Genres","Movie-Count")
+
+aggregate(movie_genre_count["Movie-Count"],list(trimws(substr(movie_genre_count[,"Genres"],1,5))),sum)
+
+
+#Hypothesis 1: Which type of movie genre appears most of the time in IMDB top 250
+#Plot graph between movie-count vs genres
+ggplot(movie_genre_count,aes(x=movie_genre_count$Genres,y=movie_genre_count$`Movie-Count`))+geom_bar(stat="identity")+xlab("Genres")+ylab("Movie-Count")
+
+
+#Hypothesis 2: Which movie among the Top 250 has the highest and the lowest gross income
+max_gross<-max(as.integer(noquote(gsub(",","",gsub("\\$","",read_movie_info$Gross))))) #Remove $ and , to calculate maximum
+movie<-read_movie_info
+#Highest Gross Income
+movie$Gross<-as.integer(noquote(gsub(",","",gsub("\\$","",movie$Gross))))
+highest_gross<-subset(movie,movie$Gross==max_gross)
+#Lowest Gross Icome
+min_gross<-min(as.integer(noquote(gsub(",","",gsub("\\$","",read_movie_info$Gross))))) #Remove $ and , to calculate minimum
+lowest_gross<-subset(movie,movie$Gross==min_gross)
+
